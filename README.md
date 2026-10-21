@@ -15,9 +15,9 @@
 
 这个项目要解决三个问题：
 
-1. **找得到**：多格式文档统一入库，普通文档和 QA/FAQ 文档分别采用合适的分块策略。
+1. **找得到**：多格式文档统一入库，普通文档（md、pdf、Excel、docx、doc）和 QA/FAQ 文档分别采用合适的分块策略。
 2. **答得准、可核实**：向量检索 + 全文检索双路召回，RRF 融合后精排，生成答案必须带来源引用。
-3. **管得住**：学生 / 教师 / 管理员三级角色，知识库级 ACL，检索前逐库校验权限。
+3. **权限隔离**：学生 / 教师 / 管理员三级角色，知识库级 ACL，检索前逐库校验权限。
 
 ---
 
@@ -104,7 +104,7 @@ project-showcase/
 - 建议至少 4 GB 可用内存
 - 一个可用的阿里云百炼 DashScope API Key（用于生成、Embedding 和精排）
 - 能访问镜像仓库（如果镜像设为私有，需要先登录）
-- 项目所有者已按第 8 节把两个镜像推送到 `ghcr.io/sanpan53/...`；如果镜像尚未发布或未登录，`docker compose up` 会报 `manifest unknown` / `unauthorized`
+- 项目所有者已将两个镜像推送到 `ghcr.io/sanpan53/...`；如果镜像未发布或未登录，`docker compose up` 会报 `manifest unknown` / `unauthorized`
 
 ### 6.2 配置环境变量
 
@@ -115,8 +115,8 @@ cp .env.example .env
 编辑 `.env`，至少替换以下内容：
 
 ```dotenv
-APP_IMAGE=ghcr.io/sanpan53/zhixin-campus-app:1.0.0
-FRONTEND_IMAGE=ghcr.io/sanpan53/zhixin-campus-frontend:1.0.0
+APP_IMAGE=ghcr.io/sanpan53/zhixin-campus-app:1.0.1
+FRONTEND_IMAGE=ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1
 
 DASHSCOPE_API_KEY=your_dashscope_api_key_here
 DB_PASSWORD=change-me-db-password
@@ -143,6 +143,8 @@ docker compose ps
 
 首次启动会拉取镜像，并在 PostgreSQL 数据卷为空时执行 `config/db/01-schema.sql` 和 `02-seed.sql`。如果本地已有同名旧镜像，先执行 `docker compose pull`，避免继续使用旧版本。
 
+> 初始化脚本只在数据卷为空时执行。如果之前运行过旧版展示包，数据库里仍是旧的种子数据；需要先执行 `docker compose down -v` 清空数据卷，再重新启动。
+
 ### 6.4 检查运行状态
 
 ```bash
@@ -166,11 +168,11 @@ PostgreSQL、Redis 和 MinIO 的 S3 API 均未映射到宿主机，只在 Compos
 
 ### 6.6 演示账号
 
-| 用户名         | 密码        | 角色   |  | 可用范围                          |
-| -------------- | ----------- | ------ | - | --------------------------------- |
-| `admin`      | `demo123` | 管理员 |  | 全部功能                          |
-| `teacher001` | `demo123` | 教师   |  | 问答、公开库、HR 私有库及文档管理 |
-| `student001` | `demo123` | 学生   |  | 问答、公开库、TECH 私有库         |
+| 用户名       | 密码      | 角色   | 可用范围                         |
+| ------------ | --------- | ------ | -------------------------------- |
+| `admin`      | `demo123` | 管理员 | 全部功能                         |
+| `teacher001` | `demo123` | 教师   | 问答、公开库、人事处库及文档管理 |
+| `student001` | `demo123` | 学生   | 问答、公开库、计算机学院库       |
 
 > 这些账号写死在演示版认证实现中，仅用于本地演示。公开部署前必须替换为正式认证方案，不能直接上线。
 
@@ -201,6 +203,8 @@ docker compose down -v    # 停止并删除数据库、缓存和对象存储数�
 7. 分别用 `student001`、`teacher001` 登录，对比知识库列表，并分别提问课程问题和人事问题，演示权限隔离。
 8. 用 `admin` 进入“效果评估”，查看 Hit Rate / MRR / Faithfulness 的含义和 Chunk 标注流程。
 
+
+
 ---
 
 ## 8. 镜像发布（仅项目所有者）
@@ -213,12 +217,12 @@ docker compose down -v    # 停止并删除数据库、缓存和对象存储数�
 
 ```bash
 # 后端
-docker build -t ghcr.io/sanpan53/zhixin-campus-app:1.0.0 ./backend
-docker push ghcr.io/sanpan53/zhixin-campus-app:1.0.0
+docker build -t ghcr.io/sanpan53/zhixin-campus-app:1.0.1 ./backend
+docker push ghcr.io/sanpan53/zhixin-campus-app:1.0.1
 
 # 前端
-docker build -t ghcr.io/sanpan53/zhixin-campus-frontend:1.0.0 ./frontend
-docker push ghcr.io/sanpan53/zhixin-campus-frontend:1.0.0
+docker build -t ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1 ./frontend
+docker push ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1
 ```
 
 需要同时支持 Intel 和 Apple Silicon 时，用 buildx 构建多架构镜像。如果当前默认 builder 不支持多架构，先创建一个 `docker-container` builder：
@@ -233,13 +237,13 @@ docker buildx create --name zhixin-multi --driver docker-container --use --boots
 # 后端
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/sanpan53/zhixin-campus-app:1.0.0 \
+  -t ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
   --push ./backend
 
 # 前端
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/sanpan53/zhixin-campus-frontend:1.0.0 \
+  -t ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1 \
   --push ./frontend
 ```
 
@@ -249,11 +253,11 @@ docker buildx build \
 
 ```bash
 # 确认镜像内没有 .env
-docker run --rm --entrypoint sh ghcr.io/sanpan53/zhixin-campus-app:1.0.0 \
+docker run --rm --entrypoint sh ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
   -c 'ls -la /app; test ! -e /app/.env && echo "no .env: OK"'
 
 # 检查构建历史和镜像配置中是否出现可疑的密钥字段
-docker history --no-trunc ghcr.io/sanpan53/zhixin-campus-app:1.0.0 \
+docker history --no-trunc ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
   | grep -Ei 'api[_-]?key|secret|password|token' || true
 ```
 

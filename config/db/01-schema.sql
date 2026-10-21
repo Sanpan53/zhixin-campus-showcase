@@ -22,7 +22,7 @@ CREATE TABLE kb_knowledge_base (
     is_deleted      BOOLEAN         NOT NULL DEFAULT FALSE
 );
 
-COMMENT ON TABLE kb_knowledge_base IS '知识库，一个部门可以有多个知识库';
+COMMENT ON TABLE kb_knowledge_base IS '知识库，一个院系或处室可以有多个知识库';
 CREATE INDEX idx_kb_department ON kb_knowledge_base(department_id) WHERE is_deleted = FALSE;
 
 -- ================================================================
@@ -106,7 +106,7 @@ CREATE INDEX idx_chunk_embedding ON kb_doc_chunk
 -- 全文检索索引
 CREATE INDEX idx_chunk_content_tsv ON kb_doc_chunk USING GIN (content_tsv);
 
--- 多租户过滤索引
+-- 多院系 / 多知识库过滤索引
 CREATE INDEX idx_chunk_kb_id ON kb_doc_chunk(kb_id);
 CREATE INDEX idx_chunk_doc_id ON kb_doc_chunk(doc_id);
 

@@ -5,9 +5,9 @@
 
 -- ----------------------------------------------------------------
 -- 演示用户说明（认证实现内置于应用，数据库不存用户表）：
---   student001 / demo123  STUDENT  部门 TECH
---   teacher001 / demo123  TEACHER  部门 HR
---   admin      / demo123  ADMIN    部门 ALL
+--   student001 / demo123  STUDENT  院系 CS（计算机学院）
+--   teacher001 / demo123  TEACHER  处室 PERSONNEL（人事处）
+--   admin      / demo123  ADMIN    全校 ALL
 -- 以上账号仅用于本地演示，绝不可用于公开部署
 -- ----------------------------------------------------------------
 
@@ -18,8 +18,8 @@ INSERT INTO kb_knowledge_base (id, name, description, department_id, is_public, 
 VALUES
     (1, '校园制度', '学生住宿、奖学金等校级制度（演示数据）', 'ALL', TRUE, 3),
     (2, '校园服务与办事指南', '图书馆、信息化服务等办事说明（演示数据）', 'ALL', TRUE, 3),
-    (3, '计算机课程资料', '课程讲义与复习资料（演示数据）', 'TECH', FALSE, 2),
-    (4, '人事制度', '教师请假、调课等内部制度（演示数据）', 'HR', FALSE, 2);
+    (3, '计算机课程资料', '课程讲义与复习资料（演示数据）', 'CS', FALSE, 2),
+    (4, '人事制度', '教师请假、调课等内部制度（演示数据）', 'PERSONNEL', FALSE, 2);
 
 SELECT setval(
     'kb_knowledge_base_id_seq',
@@ -29,9 +29,9 @@ SELECT setval(
 -- ----------------------------------------------------------------
 -- 知识库权限
 -- KB1、KB2 为公开库，所有登录用户可读；
--- KB3 仅 TECH 部门可读写；KB4 仅 HR 部门可读写。
+-- KB3 仅计算机学院（CS）可读写；KB4 仅人事处（PERSONNEL）可读写。
 -- ----------------------------------------------------------------
 INSERT INTO kb_permission (kb_id, subject_type, subject_id, permission, granted_by)
 VALUES
-    (3, 'DEPARTMENT', 'TECH', 'WRITE', 3),
-    (4, 'DEPARTMENT', 'HR', 'WRITE', 3);
+    (3, 'DEPARTMENT', 'CS', 'WRITE', 3),
+    (4, 'DEPARTMENT', 'PERSONNEL', 'WRITE', 3);
