@@ -1,0 +1,162 @@
+# =============================================================
+# 知新校园 · 面试展示版
+# 只引用预构建镜像；本文件不包含 build:，也不挂载任何业务源码。
+# 仅挂载数据库初始化脚本（表结构 + 演示种子），属于部署配置。
+# =============================================================
+name: zhixin-campus-showcase
+
+networks:
+  zhixin-net:
+    driver: bridge
+
+services:
+  # ---------- 后端：FastAPI + RAG 管道 ----------
+  app:
+    image: ${APP_IMAGE:?请先复制 .env.example 为 .env，并填写 APP_IMAGE}
+    container_name: zhixin-app
+    environment:
+      APP_ENV: ${APP_ENV:-demo}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-zhixin}
+      DB_USERNAME: ${DB_USERNAME:-zhixin}
+      DB_PASSWORD: ${DB_PASSWORD:?请在 .env 中填写 DB_PASSWORD}
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?请在 .env 中填写 MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?请在 .env 中填写 MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-zhixin-documents}
+      MINIO_SECURE: "false"
+
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请在 .env 中填写 DASHSCOPE_API_KEY}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      CHAT_MODEL: ${CHAT_MODEL:-qwen-plus}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
+
+      RERANKER_ENDPOINT: ${RERANKER_ENDPOINT:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
+      RERANKER_MODEL: ${RERANKER_MODEL:-qwen3-rerank}
+      RERANKER_TIMEOUT_MS: ${RERANKER_TIMEOUT_MS:-800}
+      RERANKER_TOP_N: ${RERANKER_TOP_N:-5}
+
+      RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE:-512}
+      RAG_CHUNK_OVERLAP: ${RAG_CHUNK_OVERLAP:-64}
+      RAG_VECTOR_TOP_K: ${RAG_VECTOR_TOP_K:-20}
+      RAG_FULLTEXT_TOP_K: ${RAG_FULLTEXT_TOP_K:-20}
+      RAG_RETURN_TOP_N: ${RAG_RETURN_TOP_N:-5}
+      RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.3}
+      RAG_CONTEXT_MAX_TOKENS: ${RAG_CONTEXT_MAX_TOKENS:-3000}
+
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      MAX_REQUEST_SIZE_MB: ${MAX_REQUEST_SIZE_MB:-100}
+    ports:
+      - "8000:8000"          # Swagger / API / 健康检查
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [zhixin-net]
+    restart: unless-stopped
+
+  # ---------- 前端：Nginx + React 构建产物 ----------
+  frontend:
+    image: ${FRONTEND_IMAGE:?请先复制 .env.example 为 .env，并填写 FRONTEND_IMAGE}
+    container_name: zhixin-frontend
+    ports:
+      - "3000:80"            # Web 主入口
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [zhixin-net]
+    restart: unless-stopped
+
+  # ---------- PostgreSQL 16 + pgvector ----------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: zhixin-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-zhixin}
+      POSTGRES_USER: ${DB_USERNAME:-zhixin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 中填写 DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # 仅首次创建数据卷时执行；升级表结构需先备份，再执行迁移脚本
+      - ./config/db/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./config/db/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-zhixin} -d ${DB_NAME:-zhixin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [zhixin-net]
+    restart: unless-stopped
+
+  # ---------- Redis：查询缓存 ----------
+  redis:
+    image: redis:7.4-alpine
+    container_name: zhixin-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [zhixin-net]
+    restart: unless-stopped
+
+  # ---------- MinIO：原始文档对象存储 ----------
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: zhixin-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中填写 MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中填写 MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9001:9001"          # 可选：MinIO 控制台，仅本机演示时开放
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks: [zhixin-net]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
