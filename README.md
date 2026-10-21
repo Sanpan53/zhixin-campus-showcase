@@ -104,7 +104,7 @@ project-showcase/
 - 建议至少 4 GB 可用内存
 - 一个可用的阿里云百炼 DashScope API Key（用于生成、Embedding 和精排）
 - 能访问镜像仓库（如果镜像设为私有，需要先登录）
-- 项目所有者已将两个镜像推送到 `ghcr.io/sanpan53/...`；如果镜像未发布或未登录，`docker compose up` 会报 `manifest unknown` / `unauthorized`
+- 两个镜像已发布到 `ghcr.io/sanpan53/...`；如果镜像未发布或未登录，`docker compose up` 会报 `manifest unknown` / `unauthorized`
 
 ### 6.2 配置环境变量
 
@@ -203,76 +203,9 @@ docker compose down -v    # 停止并删除数据库、缓存和对象存储数�
 7. 分别用 `student001`、`teacher001` 登录，对比知识库列表，并分别提问课程问题和人事问题，演示权限隔离。
 8. 用 `admin` 进入“效果评估”，查看 Hit Rate / MRR / Faithfulness 的含义和 Chunk 标注流程。
 
-
-
 ---
 
-## 8. 镜像发布（仅项目所有者）
-
-本展示包**不包含构建配置**，镜像需要从完整源码仓库构建并推送。以下命令在完整源码仓库执行，不要在本展示包执行。
-
-> 推送镜像需要 GitHub PAT 具备 `write:packages` 权限；只给面试方拉取时，单独发放仅含 `read:packages` 的短期 token，不要把你的推送令牌交给对方。
-
-### 8.1 构建与推送
-
-```bash
-# 后端
-docker build -t ghcr.io/sanpan53/zhixin-campus-app:1.0.1 ./backend
-docker push ghcr.io/sanpan53/zhixin-campus-app:1.0.1
-
-# 前端
-docker build -t ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1 ./frontend
-docker push ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1
-```
-
-需要同时支持 Intel 和 Apple Silicon 时，用 buildx 构建多架构镜像。如果当前默认 builder 不支持多架构，先创建一个 `docker-container` builder：
-
-```bash
-docker buildx create --name zhixin-multi --driver docker-container --use --bootstrap
-```
-
-然后执行：
-
-```bash
-# 后端
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
-  --push ./backend
-
-# 前端
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/sanpan53/zhixin-campus-frontend:1.0.1 \
-  --push ./frontend
-```
-
-> 普通的 `docker build` 只生成当前机器架构的镜像。例如在 Apple Silicon Mac 上构建的是 `linux/arm64`，Intel Mac / Windows x86_64 无法直接运行。若面试方可能使用 Intel / Windows，务必用上面的 buildx 命令重新发布，并用 `docker buildx imagetools inspect <镜像名>` 确认同时包含 `linux/amd64` 和 `linux/arm64`。
-
-### 8.2 发布前安全检查
-
-```bash
-# 确认镜像内没有 .env
-docker run --rm --entrypoint sh ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
-  -c 'ls -la /app; test ! -e /app/.env && echo "no .env: OK"'
-
-# 检查构建历史和镜像配置中是否出现可疑的密钥字段
-docker history --no-trunc ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
-  | grep -Ei 'api[_-]?key|secret|password|token' || true
-```
-
-> `grep` 命中不代表一定泄露，需要逐条确认；重点是不要把真实 Key、`.env`、`.git`、测试数据或内部地址打进镜像。
-
-### 8.3 关于“镜像可被解包”的重要说明
-
-- 预构建镜像只能避免**仓库直接提供源码**，不能阻止有权限的人通过 `docker save` / `docker history` 解包检查。
-- 后端镜像是 Python 源码运行，`/app/src` 内可以看到 Python 代码；前端镜像只包含构建后的静态产物，但 JS 仍是可读的打包结果。
-- 如果源码本身敏感，**不要把镜像设为 public**。使用私有 GHCR 包，只给面试方发放短期、只读的 `read:packages` 令牌；更稳妥的做法是提供临时演示环境或录屏，而不是公开镜像。
-- 镜像中不应包含 `.env`、`.git`、真实数据、内部地址。完整源码仓库的 `.dockerignore` 已排除 `.env`、`.git`、测试目录等；发布前仍应按 8.2 再检查一次。
-
----
-
-## 9. 效果评估
+## 8. 效果评估
 
 评估流水线计算三项指标：
 
@@ -282,19 +215,19 @@ docker history --no-trunc ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
 | MRR          | 首个正确 Chunk 的排名质量       | 每题取 `1/rank`，未命中计 0，再对总题数求平均 |
 | Faithfulness | 答案相对检索上下文的忠实程度    | 对带参考答案的题调用忠实性检查，取平均          |
 
-**当前评估数据的真实状态：**
+**评估现状：**
 
 - 完整源码仓库中有 50 道题的固定测试集，覆盖 5 个知识库，每个知识库 10 题；40 题 `dev`、10 题 `holdout`；25 题 easy、25 题 medium。
 - 截至 2026-10-21，50 题的 `expected_chunk_ids` 全部为 `null`，`review_status` 为 `pending_chunk_annotation`。
-- 因此目前**没有可复现的 Hit Rate / MRR 基线**；在完成标注前运行评估，命中会被计为 0。
-- 评估代码的命中判定使用精排 Top-10（`RERANK_TOP_K=10`），严格说是 **Hit@10 / MRR@10**。如果对外说 Top-5，需要把评估常量改为 5 或单独计算 Top-5，不能混用口径。
+- 因此当前**没有可复现的 Hit Rate / MRR 基线**；完成 Chunk 标注前运行评估，命中会计为 0。
+- 评估代码的命中判定使用精排 Top-10（`RERANK_TOP_K=10`），因此指标口径是 **Hit@10 / MRR@10**。
 - Faithfulness 由项目内的 LLM 判定器打分，不是直接调用 RAGAS 库。
 
-详细的评测协议、待填写的指标表和面试表述模板见 [`PROJECT_CASE.md`](PROJECT_CASE.md)。**不要使用未经实测的数字（例如“72%→86%”“响应从 3.1s 降到 1.8s”），除非你确实跑出了对应的基线和优化版本。**
+详细的评测协议和指标定义见 [`PROJECT_CASE.md`](PROJECT_CASE.md)。所有指标均以实际运行结果为准。
 
 ---
 
-## 10. 安全边界与已知限制
+## 9. 安全边界与已知限制
 
 - **认证是演示实现**：演示账号写死在代码中，token 存在单进程内存里。多 worker / 多副本部署会导致 token 不共享；生产应接 SSO / LDAP，并把 token 或会话迁移到 Redis / 数据库。
 - **没有 HTTPS、限流、WAF 和上传内容审计**：对外提供服务前必须补齐。
@@ -308,7 +241,7 @@ docker history --no-trunc ghcr.io/sanpan53/zhixin-campus-app:1.0.1 \
 
 ---
 
-## 11. 常见问题
+## 10. 常见问题
 
 ### 启动时报错 `APP_IMAGE` / `DASHSCOPE_API_KEY` 未设置
 
@@ -341,11 +274,11 @@ curl -fsS http://localhost:8000/health
 
 ### Hit Rate / MRR 为 0，但 Faithfulness 很高
 
-这通常不是“检索完全失效”，而是评估题还没有标注期望 Chunk。未标注时 `expected_chunk_ids` 为空，代码会把每题都判为未命中。先按 `PROJECT_CASE.md` 的标注流程回填，再重新运行评估。
+这通常不是“检索完全失效”，而是评估题还没有标注期望 Chunk。未标注时 `expected_chunk_ids` 为空，代码会把每题都判为未命中。需要先完成期望 Chunk 标注，再运行评估；标注流程见 [`PROJECT_CASE.md`](PROJECT_CASE.md)。
 
 ---
 
-## 12. 数据与许可
+## 11. 数据与许可
 
 - `sample-data/` 中的学校、人员、金额、邮箱、制度条款均为虚构数据，不对应任何真实学校或个人。
 - 本展示包未声明开源许可证。未经项目所有者许可，不得复制、分发或用于商业用途。
